@@ -1,0 +1,448 @@
+package com.chief.twdrp.third;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.wxmotor4j.core.WXMotorException;
+import org.wxmotor4j.third.api.DefaultThirdClient;
+import org.wxmotor4j.third.api.WXThirdClient;
+import org.wxmotor4j.third.api.WXThirdTokenManage;
+import org.wxmotor4j.third.request.WXThirdGetComponentTokenRequest;
+import org.wxmotor4j.third.request.WXThirdGetJsapiTicketRequest;
+import org.wxmotor4j.third.request.WXThirdGetPreAuthCodeRequest;
+import org.wxmotor4j.third.request.WXThirdRefreshAuthorizerTokenRequest;
+import org.wxmotor4j.third.response.WXThirdGetComponentTokenResponse;
+import org.wxmotor4j.third.response.WXThirdGetJsapiTicketResponse;
+import org.wxmotor4j.third.response.WXThirdGetPreAuthCodeResponse;
+import org.wxmotor4j.third.response.WXThirdRefreshAuthorizerTokenResponse;
+
+import com.rabbitframework.commons.utils.StringUtils;
+
+/**
+ * reids管理微信令牌，确保单例运行
+ * 
+ * @ClassName: RedisTokenManage
+ * @author Tluo
+ * @date 2017年9月28日
+ *
+ */
+public class RedisTokenManage implements WXThirdTokenManage {
+	@Autowired
+	private WXThirdTokenCache wXThirdTokenCache;
+
+	private String configComponentAppid;
+
+	private String configComponentAppsecret;
+
+	private String configComponentToken;
+
+	private String configEncodingAesKey;
+
+	private final WXThirdClient client = new DefaultThirdClient();
+
+	public RedisTokenManage(String configComponentAppid, String configComponentAppsecret,
+			String configComponentToken, String configEncodingAesKey) {
+		super();
+		this.configComponentAppid = configComponentAppid;
+		this.configComponentAppsecret = configComponentAppsecret;
+		this.configComponentToken = configComponentToken;
+		this.configEncodingAesKey = configEncodingAesKey;
+	}
+
+	@Override
+	public String getAuthorizerAccessToken(String authorizerAppid) throws WXMotorException {
+		String authorizerAccessToken = wXThirdTokenCache.getAuthorizerAccessToken(authorizerAppid);
+		if (StringUtils.isNotEmpty(authorizerAccessToken)) {
+			return authorizerAccessToken;
+		}
+		// 请求获取
+		return getAndSetAuthorizerAccessToken(authorizerAppid);
+	}
+
+	@Override
+	public String getAuthorizerJsapiTicket(String authorizerAppid) throws WXMotorException {
+
+		String authorizerJsapiTicket = wXThirdTokenCache.getAuthorizerJsapiTicket(authorizerAppid);
+		if (StringUtils.isNotEmpty(authorizerJsapiTicket)) {
+			return authorizerJsapiTicket;
+		}
+		return getAndSetAuthorizerJsapiTicket(authorizerAppid);
+	}
+
+	@Override
+	public String getComponentAccessToken() throws WXMotorException {
+		String componentAccessToken = wXThirdTokenCache.getComponentAccessToken();
+		if (StringUtils.isNotEmpty(componentAccessToken)) {
+			return componentAccessToken;
+		}
+		// 请求获取
+		return getAndSetComponentAccessToken();
+	}
+
+	@Override
+	public synchronized String getComponentJsapiTicket() throws WXMotorException {
+		String componentJsapiTicket = wXThirdTokenCache.getComponentJsapiTicket();
+		if (StringUtils.isNotEmpty(componentJsapiTicket)) {
+			return componentJsapiTicket;
+		}
+		// 请求获取
+		return getAndSetComponentJsapiTicket();
+	}
+
+	@Override
+	public synchronized String getComponentPreAuthCode() throws WXMotorException {
+		String componentPreAuthCode = wXThirdTokenCache.getComponentPreAuthCode();
+		if (StringUtils.isNotEmpty(componentPreAuthCode)) {
+			return componentPreAuthCode;
+		}
+		// 请求获取
+		return getAndSetComponentPreAuthCode();
+	}
+
+	@Override
+	public synchronized String upComponentPreAuthCode() throws WXMotorException {
+		// 请求获取
+		WXThirdGetPreAuthCodeRequest request = new WXThirdGetPreAuthCodeRequest(
+				getComponentAccessToken(), this.configComponentAppid);
+		WXThirdGetPreAuthCodeResponse response = client.execute(request);
+		String componentPreAuthCode = response.getPreAuthCode();
+		if (StringUtils.isEmpty(componentPreAuthCode)) {
+			throw new WXMotorException("获取componentPreAuthCode失败，errinfo==>" + response.getErrcode()
+					+ "_" + response.getDesc());
+		}
+		// 设置缓存
+		wXThirdTokenCache.setComponentPreAuthCode(componentPreAuthCode, response.getExpiresIn());
+		return componentPreAuthCode;
+	}
+
+	@Override
+	public String getComponentVerifyTicket() throws WXMotorException {
+		String componentVerifyTicket = wXThirdTokenCache.getComponentVerifyTicket();
+		if (StringUtils.isNotEmpty(componentVerifyTicket)) {
+			return componentVerifyTicket;
+		}
+		throw new WXMotorException("请稍候...");
+
+	}
+
+	@Override
+	public String getConfigComponentAppid() throws WXMotorException {
+		return this.configComponentAppid;
+	}
+
+	@Override
+	public String getConfigComponentAppsecret() throws WXMotorException {
+		return this.configComponentAppsecret;
+	}
+
+	@Override
+	public String getConfigComponentToken() throws WXMotorException {
+		return this.configComponentToken;
+	}
+
+	@Override
+	public String getConfigEncodingAesKey() throws WXMotorException {
+		return this.configEncodingAesKey;
+	}
+
+	/**
+	 * 获取并设置AuthorizerAccessToken
+	 * 
+	 * @Title: getAndSetAuthorizerAccessToken
+	 * @return String 返回类型
+	 */
+	private synchronized String getAndSetAuthorizerAccessToken(String authorizerAppid) {
+		String authorizerAccessToken = wXThirdTokenCache.getAuthorizerAccessToken(authorizerAppid);
+		if (StringUtils.isNotEmpty(authorizerAccessToken)) {
+			return authorizerAccessToken;
+		}
+		String authorizerRefreshToken = wXThirdTokenCache
+				.getAuthorizerRefreshToken(authorizerAppid);
+		WXThirdRefreshAuthorizerTokenRequest request = new WXThirdRefreshAuthorizerTokenRequest(
+				getComponentAccessToken(), configComponentAppid, authorizerAppid,
+				authorizerRefreshToken);
+		WXThirdRefreshAuthorizerTokenResponse response = client.execute(request);
+		authorizerAccessToken = response.getAuthorizerAccessToken();
+		if (StringUtils.isEmpty(authorizerAccessToken)) {
+			throw new WXMotorException("获取authorizerAccessToken失败，errinfo==>" + response.getErrcode()
+					+ "_" + response.getDesc());
+		}
+		String newAuthorizerRefreshToken = response.getAuthorizerRefreshToken();
+		// 设置缓存
+		wXThirdTokenCache.setAuthorizerAccessToken(authorizerAppid, authorizerAccessToken,
+				response.getExpiresIn());
+		wXThirdTokenCache.setAuthorizerRefreshToken(authorizerAppid, newAuthorizerRefreshToken);
+		return authorizerAccessToken;
+	}
+
+	/**
+	 * 
+	 * @Title: getAndSetAuthorizerJsapiTicket
+	 * @return String 返回类型
+	 */
+	private String getAndSetAuthorizerJsapiTicket(String authorizerAppid) {
+		String authorizerJsapiTicket = wXThirdTokenCache.getAuthorizerJsapiTicket(authorizerAppid);
+		if (StringUtils.isNotEmpty(authorizerJsapiTicket)) {
+			return authorizerJsapiTicket;
+		}
+		String authorizerAccessToken = getAuthorizerAccessToken(authorizerAppid);
+		// 请求获取
+		WXThirdGetJsapiTicketRequest request = new WXThirdGetJsapiTicketRequest(
+				authorizerAccessToken);
+		WXThirdGetJsapiTicketResponse response = client.execute(request);
+		authorizerJsapiTicket = response.getTicket();
+		if (StringUtils.isEmpty(authorizerJsapiTicket)) {
+			throw new WXMotorException("获取authorizerJsapiTicket失败，errinfo==>" + response.getErrcode()
+					+ "_" + response.getDesc());
+		}
+		// 设置缓存
+		wXThirdTokenCache.setAuthorizerJsapiTicket(authorizerAppid, authorizerJsapiTicket,
+				response.getExpiresIn());
+		return authorizerJsapiTicket;
+	
+	}
+
+	/**
+	 * 获取并设置ComponentAccessToken
+	 * 
+	 * @Title: getAndSetComponentAccessToken
+	 * @return String 返回类型
+	 */
+	private synchronized String getAndSetComponentAccessToken() throws WXMotorException {
+		String componentAccessToken = wXThirdTokenCache.getComponentAccessToken();
+		if (StringUtils.isNotEmpty(componentAccessToken)) {
+			return componentAccessToken;
+		}
+		// 请求获取
+		WXThirdGetComponentTokenRequest request = new WXThirdGetComponentTokenRequest(
+				this.configComponentAppid, this.configComponentAppsecret,
+				getComponentVerifyTicket());
+		WXThirdGetComponentTokenResponse response = client.execute(request);
+		componentAccessToken = response.getComponentAccessToken();
+		if (StringUtils.isEmpty(componentAccessToken)) {
+			throw new WXMotorException("获取ComponentAccessToken失败，errinfo==>" + response.getErrcode()
+					+ "_" + response.getDesc());
+		}
+		// 设置缓存
+		wXThirdTokenCache.setComponentAccessToken(componentAccessToken, response.getExpiresIn());
+		return componentAccessToken;
+	}
+
+	/**
+	 * 获取并设置
+	 * 
+	 * @Title: getAndSetComponentJsapiTicket
+	 * @return String 返回类型
+	 */
+	private synchronized String getAndSetComponentJsapiTicket() throws WXMotorException {
+		String componentJsapiTicket = wXThirdTokenCache.getComponentJsapiTicket();
+		if (StringUtils.isNotEmpty(componentJsapiTicket)) {
+			return componentJsapiTicket;
+		}
+		// 请求获取
+		WXThirdGetJsapiTicketRequest request = new WXThirdGetJsapiTicketRequest(
+				getComponentAccessToken());
+		WXThirdGetJsapiTicketResponse response = client.execute(request);
+		componentJsapiTicket = response.getTicket();
+		if (StringUtils.isEmpty(componentJsapiTicket)) {
+			throw new WXMotorException("获取componentJsapiTicket失败，errinfo==>" + response.getErrcode()
+					+ "_" + response.getDesc());
+		}
+		// 设置缓存
+		wXThirdTokenCache.setComponentJsapiTicket(componentJsapiTicket, response.getExpiresIn());
+		return componentJsapiTicket;
+	}
+
+	/**
+	 * 获取并设置ComponentPreAuthCode
+	 * 
+	 * @Title: getAndSetComponentPreAuthCode
+	 * @return String 返回类型
+	 */
+	private synchronized String getAndSetComponentPreAuthCode() throws WXMotorException {
+		String componentPreAuthCode = wXThirdTokenCache.getComponentPreAuthCode();
+		if (StringUtils.isNotEmpty(componentPreAuthCode)) {
+			return componentPreAuthCode;
+		}
+		// 请求获取
+		WXThirdGetPreAuthCodeRequest request = new WXThirdGetPreAuthCodeRequest(
+				getComponentAccessToken(), this.configComponentAppid);
+		WXThirdGetPreAuthCodeResponse response = client.execute(request);
+		componentPreAuthCode = response.getPreAuthCode();
+		if (StringUtils.isEmpty(componentPreAuthCode)) {
+			throw new WXMotorException("获取componentPreAuthCode失败，errinfo==>" + response.getErrcode()
+					+ "_" + response.getDesc());
+		}
+		// 设置缓存
+		wXThirdTokenCache.setComponentPreAuthCode(componentPreAuthCode, response.getExpiresIn());
+		return componentPreAuthCode;
+	}
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+package com.chief.twdrp.third;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
+import redis.clients.jedis.Jedis;
+
+import com.chief.twdrp.cache.redis.RabbitRedisPool;
+import com.chief.twdrp.model.BusWxthirdAuthorizerInfo;
+import com.chief.twdrp.service.BusWxthirdAuthorizerInfoService;
+import com.rabbitframework.commons.utils.StringUtils;
+
+/**
+ * redis 管理微信令牌
+ * 
+ * @ClassName: WXThirdTokenCache
+ * @author Tluo
+ * @date 2017年9月29日
+ *
+ */
+@Component
+public class WXThirdTokenCache {
+
+	@Autowired
+	private BusWxthirdAuthorizerInfoService authorizerInfoService;
+
+	private static final String authorizer_access_token_rediskey = "wxthird:token:authorizer:accesstoken";
+	private static final String authorizer_jsapi_ticket_rediskey = "wxthird:token:authorizer:jsapiticket";
+	private static final String authorizer_refresh_token_rediskey = "wxthird:token:authorizer:refreshtoken";
+	private static final String component_access_token_rediskey = "wxthird:token:component:accesstoken";
+	private static final String component_jsapi_ticket_rediskey = "wxthird:token:component:jsapiticket";
+	private static final String component_pre_auth_code_rediskey = "wxthird:token:component:preauthcode";
+	private static final String component_verify_ticket_rediskey = "wxthird:token:component:verifyticket";
+
+	@Autowired
+	private RabbitRedisPool rabbitRedisPool;
+
+	private String getValue(String key) {
+		Jedis jedis = null;
+		try {
+			jedis = rabbitRedisPool.getResource();
+			return jedis.get(key);
+		} finally {
+			if (null != jedis) {
+				jedis.close();
+			}
+		}
+	}
+
+	private void setex(String key, int seconds, String value) {
+		Jedis jedis = null;
+		try {
+			jedis = rabbitRedisPool.getResource();
+			jedis.setex(key, seconds, value);
+		} finally {
+			if (null != jedis) {
+				jedis.close();
+			}
+		}
+	}
+
+	public String getComponentVerifyTicket() {
+		return getValue(component_verify_ticket_rediskey);
+	}
+
+	public void setComponentVerifyTicket(String componentVerifyTicket, int seconds) {
+		setex(component_verify_ticket_rediskey, seconds, componentVerifyTicket);
+	}
+
+	public String getComponentPreAuthCode() {
+		return getValue(component_pre_auth_code_rediskey);
+	}
+
+	public void setComponentPreAuthCode(String componentPreAuthCode, int seconds) {
+		setex(component_pre_auth_code_rediskey, seconds / 2, componentPreAuthCode);
+
+	}
+
+	public String getComponentAccessToken() {
+		return getValue(component_access_token_rediskey);
+	}
+
+	public void setComponentAccessToken(String componentAccessToken, int seconds) {
+		setex(component_access_token_rediskey, seconds / 2, componentAccessToken);
+	}
+
+	public String getAuthorizerAccessToken(String authorizerAppid) {
+		return getValue(authorizer_access_token_rediskey + ":" + authorizerAppid);
+	}
+
+	public void setAuthorizerAccessToken(String authorizerAppid, String authorizerAccessToken,
+			int seconds) {
+		setex(authorizer_access_token_rediskey + ":" + authorizerAppid, seconds / 2,
+				authorizerAccessToken);
+
+	}
+
+	public String getAuthorizerJsapiTicket(String authorizerAppid) {
+		return getValue(authorizer_jsapi_ticket_rediskey + ":" + authorizerAppid);
+	}
+
+	public void setAuthorizerJsapiTicket(String authorizerAppid, String authorizerJsapiTicket,
+			int seconds) {
+		setex(authorizer_jsapi_ticket_rediskey + ":" + authorizerAppid, seconds / 2,
+				authorizerJsapiTicket);
+	}
+
+	public String getAuthorizerRefreshToken(String authorizerAppid) {
+		String authorizerRefreshToken = getValue(authorizer_refresh_token_rediskey + ":"
+				+ authorizerAppid);
+		if (StringUtils.isEmpty(authorizerRefreshToken)) {
+			// 从数据库中获取
+			BusWxthirdAuthorizerInfo info = authorizerInfoService
+					.getInfoByAuthorizerAppid(authorizerAppid);
+			if (null == info) {
+				return null;
+			}
+			authorizerRefreshToken = info.getAuthorizerRefreshToken();
+		}
+		return authorizerRefreshToken;
+
+	}
+
+	public void setAuthorizerRefreshToken(String authorizerAppid, String newAuthorizerRefreshToken) {
+		if (StringUtils.isEmpty(newAuthorizerRefreshToken)
+				|| getAuthorizerRefreshToken(authorizerAppid).equals(newAuthorizerRefreshToken)) {
+			return;
+		}
+		setex(authorizer_refresh_token_rediskey + ":" + authorizerAppid, 2592000,
+				newAuthorizerRefreshToken); // 30天
+		// 存储到数据库
+		BusWxthirdAuthorizerInfo info = authorizerInfoService
+				.getInfoByAuthorizerAppid(authorizerAppid);
+		if (null != info) {
+			BusWxthirdAuthorizerInfo upinfo = new BusWxthirdAuthorizerInfo();
+			upinfo.setAuthorizerAppid(authorizerAppid);
+			upinfo.setAuthorizerRefreshToken(newAuthorizerRefreshToken);
+			authorizerInfoService.updateBusWxthirdAuthorizerInfo(upinfo);
+		}
+
+	}
+
+	public String getComponentJsapiTicket() {
+		return getValue(component_jsapi_ticket_rediskey);
+	}
+
+	public void setComponentJsapiTicket(String componentJsapiTicket, int seconds) {
+		setex(component_jsapi_ticket_rediskey, seconds / 2, componentJsapiTicket);
+
+	}
+
+}
