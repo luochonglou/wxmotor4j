@@ -1,0 +1,78 @@
+
+
+
+
+	private WXThirdReplyCentralProcessing centralProcessing;
+	@GET
+	@Path("/")
+	public String getMsg(@QueryParam("timestamp") String timestamp,
+			@QueryParam("nonce") String nonce, @QueryParam("signature") String signature,
+			@QueryParam("echostr") String echostr) {
+		try {
+			if (wXThirdService.checkSignature(timestamp, nonce, signature)) {
+				return echostr;
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		return "";
+	}
+
+	@POST
+	@Path("/")
+	public String postMsg(@RequestBody String queryJSON, @PathParam("appid") String appId) {
+		logger.info("====================第三方平台代收用户事件消息>>> queryJSON：{}", queryJSON);
+		String res = "success";
+		try {
+			// 消息响应
+      
+      /**
+       WXThirdReplyCentralProcessing centralProcessing;
+       可以直接在此处new 包括处理对象均可在此处new 
+      */
+			String msg = centralProcessing.notifyHandle(queryJSON, appId);
+			if (StringUtils.isNotEmpty(msg)) {
+				res = msg;
+			}
+
+		} catch (Exception e) {
+			logger.error("====================第三方平台代收用户事件消息处理失败>>>");
+			logger.error(e.getMessage(), e);
+		}
+		logger.info("====================第三方平台代收用户事件消息处理回复>>> msg：{}", res);
+		return res;
+	}
+  
+  
+  
+
+
+
+
+<!-- 微信第三方服务bean start -->
+
+	<bean id="redisTokenManage" class="com.chief.twdrp.third.RedisTokenManage">
+		<constructor-arg value="${wxthird.config.componentappid}" />
+		<constructor-arg value="${wxthird.config.componentappsecret}" />
+		<constructor-arg value="${wxthird.config.componenttoken}" />
+		<constructor-arg value="${wxthird.config.encodingaeskey}" />
+	</bean>
+	<bean id="wXThirdService" class="org.wxmotor4j.third.api.WXThirdServiceImpl">
+		<constructor-arg ref="redisTokenManage" />
+	</bean>
+
+	<!-- 微信第三方消息处理器start -->
+	<bean id="wXThirdReplyCentralProcessing" class="org.wxmotor4j.third.api.DefaultReplyCentralProcessing">
+		<constructor-arg ref="wXThirdService" />
+	</bean>
+	<bean class="com.chief.twdrp.customer.rest.third.processor.TextProcessor">
+		<constructor-arg ref="wXThirdReplyCentralProcessing" />
+	</bean>
+	<bean
+		class="com.chief.twdrp.customer.rest.third.processor.SubscribeProcessor">
+		<constructor-arg ref="wXThirdReplyCentralProcessing" />
+	</bean>
+	<bean class="com.chief.twdrp.customer.rest.third.processor.SCANProcessor">
+		<constructor-arg ref="wXThirdReplyCentralProcessing" />
+	</bean>
+	<!-- 微信第三方消息处理器end -->
